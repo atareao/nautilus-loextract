@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# This file is part of nautilus-lo-compress
+# This file is part of nautilus-loextract
 #
 # Copyright (C) 2017 Lorenzo Carbonell
 # lorenzo.carbonell.cerezo@gmail.com
@@ -35,13 +35,8 @@ from gi.repository import GObject
 from gi.repository import GLib
 from gi.repository import Nautilus as FileManager
 from zipfile import ZipFile
-import zipfile
-import tempfile
 import os
 import shutil
-from xml.etree import ElementTree
-from PIL import Image
-import ConfigParser
 from threading import Thread
 import mimetypes
 from urllib import unquote_plus
@@ -55,7 +50,20 @@ if not os.path.exists(CONFIG_DIR):
 CONFIG_FILE = os.path.join(CONFIG_DIR, '{0}.conf'.format(APP.lower()))
 
 MARGIN = 10
-
+MIMETYPES = ['application/vnd.oasis.opendocument.text',
+             'application/vnd.oasis.opendocument.text-template',
+             'application/vnd.oasis.opendocument.graphics',
+             'application/vnd.oasis.opendocument.graphics-template',
+             'application/vnd.oasis.opendocument.presentation',
+             'application/vnd.oasis.opendocument.presentation-template',
+             'application/vnd.oasis.opendocument.spreadsheet',
+             'application/vnd.oasis.opendocument.spreadsheet-template']
+MIMETYPES_IMAGES = ['image/png',
+                    'image/jpeg',
+                    'image/bmp',
+                    'image/gif',
+                    'image/tiff',
+                    'image/x-tiff']
 _ = str
 
 
@@ -69,89 +77,25 @@ def get_files(files_in):
     return files
 
 
-def zipdir(path, ziph):
-    # ziph is zipfile handle
-    for root, dirs, files in os.walk(path):
-        for file in files:
-            arcname = os.path.join(os.path.relpath(root, path), file)
-            ziph.write(os.path.join(root, file), arcname)
-
-
-def to_mm(value):
-    if value.endswith('cm'):
-        return float(value[:-2]) * 10.0
-    elif value.endswith('mm'):
-        return float(value[:-2])
-    elif value.endswith('in'):
-        return float(value[:-2]) * 25.4
-
-
-def reduce_lo_file(orginalFile, dpi=300, quality=80, optimize=True):
+def extract_images(orginalFile):
     filename, fileextension = os.path.splitext(orginalFile)
-    destFile = '{0}_reduced{1}'.format(filename, fileextension)
+    destFolder = '{0}_images'.format(filename)
 
-    temporalFile = tempfile.NamedTemporaryFile().name
-    if os.path.exists(temporalFile):
-        os.remove(temporalFile)
-
-    temporalDir = tempfile.mkdtemp()
-    if os.path.exists(temporalDir):
-        shutil.rmtree(temporalDir, True)
-    os.makedirs(temporalDir)
+    if os.path.exists(destFolder):
+        shutil.rmtree(destFolder, True)
+    os.makedirs(destFolder)
 
     with ZipFile(orginalFile, 'r') as myzip:
         for element in myzip.infolist():
-            myzip.extract(element, temporalDir)
-
-    ns = {'draw': 'urn:oasis:names:tc:opendocument:xmlns:drawing:1.0',
-          'svg': 'urn:oasis:names:tc:opendocument:xmlns:svg-compatible:1.0'}
-    eTree = ElementTree.parse(os.path.join(temporalDir, 'content.xml'))
-    root = eTree.getroot()
-    for node in root.findall('.//draw:frame', ns):
-        width = to_mm(node.attrib['{%s}%s' % (ns['svg'], 'width')])
-        height = to_mm(node.attrib['{%s}%s' % (ns['svg'], 'height')])
-        aimage = node.find('draw:image', ns).attrib[
-            '{http://www.w3.org/1999/xlink}href']
-        afile = os.path.join(temporalDir, aimage)
-        size = (width / 25.4 * dpi, height / 25.4 * dpi)
-        im = Image.open(afile)
-        im.thumbnail(size, Image.ANTIALIAS)
-        im.save(afile, quality=quality, optimize=optimize)
-
-    with ZipFile(temporalFile, 'w', zipfile.ZIP_DEFLATED) as output:
-            zipdir(temporalDir, output)
-
-    if os.path.exists(destFile):
-        os.remove(destFile)
-
-    shutil.move(temporalFile, destFile)
-
-    if os.path.exists(temporalDir):
-        shutil.rmtree(temporalDir, True)
-
-
-def read_config():
-    config = ConfigParser.ConfigParser()
-    config.read(CONFIG_FILE)
-    try:
-        dpi = config.getint('Config', 'dpi')
-        quality = config.getint('Config', 'quality')
-        optimize = config.getboolean('Config', 'optimize')
-        return dpi, quality, optimize
-    except ConfigParser.NoSectionError as e:
-        print(e)
-        write_config(300, 80, True)
-    return 300, 80, True
-
-
-def write_config(dpi=300, quality=80, optimize=True):
-    config = ConfigParser.ConfigParser()
-    with open(CONFIG_FILE, 'w') as configfile:
-        config.add_section('Config')
-        config.set('Config', 'dpi', dpi)
-        config.set('Config', 'quality', quality)
-        config.set('Config', 'optimize', optimize)
-        config.write(configfile)
+            filename = element.filename.decode()
+            if filename.startswith('Pictures/') and\
+                    mimetypes.guess_type(
+                        'file://' + filename)[0] in MIMETYPES_IMAGES:
+                print(element.filename, type(element))
+                name = element.filename[9:]
+                unpacked = open(os.path.join(destFolder, name), 'w')
+                unpacked.write(myzip.read(filename))
+                unpacked.close()
 
 
 class ProgressDialog(Gtk.Dialog):
@@ -253,11 +197,10 @@ class DoItInBackground(GObject.GObject, Thread):
     def stop(self, *args):
         self.stopit = True
 
-    def compress_file(self, file_in, dpi, quality, optimize):
-        reduce_lo_file(file_in, dpi, quality, optimize)
+    def extract_images(self, file_in):
+        extract_images(file_in)
 
     def run(self):
-        dpi, quality, optimize = read_config()
         total = 0
         for element in self.elements:
             total += os.path.getsize(element)
@@ -269,7 +212,7 @@ class DoItInBackground(GObject.GObject, Thread):
                     self.ok = False
                     break
                 self.emit('start_one', element)
-                self.compress_file(element, dpi, quality, optimize)
+                self.extract_images(element)
                 self.emit('end_one', os.path.getsize(element))
         except Exception as e:
             self.ok = False
@@ -282,74 +225,7 @@ class DoItInBackground(GObject.GObject, Thread):
         self.emit('ended', self.ok)
 
 
-class ConfigDialog(Gtk.Dialog):
-
-    def __init__(self, title, parent):
-        Gtk.Dialog.__init__(self,
-                            title,
-                            parent,
-                            Gtk.DialogFlags.MODAL |
-                            Gtk.DialogFlags.DESTROY_WITH_PARENT,
-                            (Gtk.STOCK_CANCEL, Gtk.ResponseType.REJECT,
-                             Gtk.STOCK_OK, Gtk.ResponseType.ACCEPT))
-
-        self.set_position(Gtk.WindowPosition.CENTER_ALWAYS)
-        self.set_resizable(False)
-        self.connect('destroy', self.close)
-        self.set_modal(True)
-
-        frame = Gtk.Frame()
-        frame.set_margin_top(MARGIN)
-        frame.set_margin_bottom(MARGIN)
-        frame.set_margin_right(MARGIN)
-        frame.set_margin_left(MARGIN)
-        self.get_content_area().add(frame)
-
-        grid = Gtk.Grid()
-        grid.set_margin_top(MARGIN)
-        grid.set_margin_bottom(MARGIN)
-        grid.set_margin_right(MARGIN)
-        grid.set_margin_left(MARGIN)
-        grid.set_row_spacing(MARGIN)
-        grid.set_row_homogeneous(False)
-        grid.set_column_spacing(MARGIN)
-        grid.set_column_homogeneous(False)
-        frame.add(grid)
-        #
-        label = Gtk.Label('dpi' + ':')
-        label.set_alignment(0.0, 0.5)
-        grid.attach(label, 0, 0, 1, 1)
-        self.dpi = Gtk.HScale.new_with_range(0, 600, 50)
-        self.dpi.set_size_request(200, 0)
-        grid.attach(self.dpi, 1, 0, 1, 1)
-        label = Gtk.Label('quality' + ':')
-        label.set_alignment(0.0, 0.5)
-        grid.attach(label, 0, 1, 1, 1)
-        self.quality = Gtk.HScale.new_with_range(0, 100, 1)
-        grid.attach(self.quality, 1, 1, 1, 1)
-        label = Gtk.Label('Optimize' + ':')
-        label.set_alignment(0.0, 0.5)
-        grid.attach(label, 0, 2, 1, 1)
-        box = Gtk.Box.new(Gtk.Orientation.HORIZONTAL, 5)
-        grid.attach(box, 1, 2, 1, 1)
-        self.optimize = Gtk.Switch()
-        box.pack_start(self.optimize, False, False, 0)
-
-        dpi, quality, optimize = read_config()
-        self.dpi.set_value(dpi)
-        self.quality.set_value(quality)
-        self.optimize.set_active(optimize)
-
-        self.show_all()
-
-    def save(self):
-        dpi = int(self.dpi.get_value())
-        quality = int(self.quality.get_value())
-        optimize = self.optimize.get_active()
-        write_config(dpi=dpi, quality=quality, optimize=optimize)
-
-
-class CompressODTFileMenuProvider(GObject.GObject, FileManager.MenuProvider):
+class ExtImagesODTFileMenuProvider(GObject.GObject, FileManager.MenuProvider):
     """
     Implements the 'Replace in Filenames' extension to the File Manager\
     right-click menu
@@ -369,11 +245,11 @@ class CompressODTFileMenuProvider(GObject.GObject, FileManager.MenuProvider):
             if not os.path.isfile(file_in):
                 return False
             mimetype = mimetypes.guess_type('file://' + file_in)[0]
-            if mimetype != 'application/vnd.oasis.opendocument.text':
+            if mimetype not in MIMETYPES:
                 return False
         return True
 
-    def compressodt(self, menu, selected, window):
+    def extractimages(self, menu, selected, window):
         odtfiles = get_files(selected)
         diib = DoItInBackground(odtfiles)
         progreso = ProgressDialog(_('Compress ODT file'),
@@ -394,47 +270,33 @@ class CompressODTFileMenuProvider(GObject.GObject, FileManager.MenuProvider):
         method passing the selected Directory/File
         """
         top_menuitem = FileManager.MenuItem(
-            name='CompressODTFileMenuProvider::Gtk-compressodt-top',
-            label=_('Compress ODT files') + '...',
-            tip=_('Tool to compress ODT files'))
+            name='ExtImagesODTFileMenuProvider::Gtk-extimaagesfodt-top',
+            label=_('Extract images from LibreOffice files') + '...',
+            tip=_('Tool to extract images from LibreOffice files'))
         submenu = FileManager.Menu()
         top_menuitem.set_submenu(submenu)
 
         sub_menuitem_00 = FileManager.MenuItem(
-            name='CompressODTFileMenuProvider::Gtk-compressodt-sub-00',
-            label=_('Compress ODT files'),
-            tip=_('Tool to compress ODT files'))
+            name='ExtImagesODTFileMenuProvider::Gtk-extimaagesfodt-sub-00',
+            label=_('Extract images from LibreOffice files'),
+            tip=_('Tool to extract images from LibreOffice files'))
         if self.all_are_odt_files(sel_items):
             sub_menuitem_00.connect('activate',
-                                    self.compressodt,
+                                    self.extractimages,
                                     sel_items,
                                     window)
         else:
             sub_menuitem_00.set_property('sensitive', False)
         submenu.append_item(sub_menuitem_00)
 
-        sub_menuitem_01 = FileManager.MenuItem(
-            name='CompressODTFileMenuProvider::Gtk-compressodt-sub-01',
-            label=_('Configurate'),
-            tip=_('Configurate tool to compress ODT files'))
-        sub_menuitem_01.connect('activate', self.config, window)
-        submenu.append_item(sub_menuitem_01)
-
         sub_menuitem_02 = FileManager.MenuItem(
-            name='CompressODTFileMenuProvider::Gtk-compressodt-sub-02',
+            name='ExtImagesODTFileMenuProvider::Gtk-extimaagesfodt-sub-02',
             label=_('About'),
             tip=_('About'))
         sub_menuitem_02.connect('activate', self.about, window)
         submenu.append_item(sub_menuitem_02)
 
         return top_menuitem,
-
-    def config(self, widget, window):
-        configDialog = ConfigDialog('Config LO Compress', window)
-        if configDialog.run() == Gtk.ResponseType.ACCEPT:
-            configDialog.hide()
-            configDialog.save()
-        configDialog.destroy()
 
     def about(self, widget, window):
         ad = Gtk.AboutDialog(parent=window)
@@ -468,17 +330,12 @@ this program. If not, see <http://www.gnu.org/licenses/>.
 
 
 if __name__ == '__main__':
-    files = ['/home/lorenzo/Escritorio/test1.odt',
-             '/home/lorenzo/Escritorio/test2.odt',
-             '/home/lorenzo/Escritorio/test3.odt',
-             '/home/lorenzo/Escritorio/test4.odt',
-             '/home/lorenzo/Escritorio/test5.odt']
+    files = ['/home/lorenzo/Escritorio/ODT samples/test1.odt',
+             '/home/lorenzo/Escritorio/ODT samples/test2.odt',
+             '/home/lorenzo/Escritorio/ODT samples/test3.odt',
+             '/home/lorenzo/Escritorio/ODT samples/test4.odt',
+             '/home/lorenzo/Escritorio/ODT samples/test5.odt']
     # reduce_lo_file(orginalFile)
-    configDialog = ConfigDialog('test', None)
-    if configDialog.run() == Gtk.ResponseType.ACCEPT:
-        configDialog.hide()
-        configDialog.save()
-    configDialog.destroy()
     pd = ProgressDialog('Test', None, len(files))
     diib = DoItInBackground(files)
     diib.connect('started', pd.set_max_value)

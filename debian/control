@@ -1,4 +1,4 @@
-Source: nautilus-locompress
+Source: nautilus-loextract
 Section: utils
 Priority: extra
 Maintainer: Lorenzo Carbonell Cerezo <lorenzo.carbonell.cerezo@gmail.com>
@@ -6,14 +6,13 @@ Build-Depends: debhelper (>= 9)
 Standards-Version: 3.9.4
 Homepage: http://www.atareao.es
 
-Package: nautilus-locompress
+Package: nautilus-loextract
 Architecture: all
 Depends: ${misc:Depends}, ${python:Depends},
 	python,
 	python-gi,
 	python-cairo,
 	gir1.2-nautilus-3.0,
-	python-nautilus,
-	python-pil
-Description: An extension to compress/optimize LibreOffice odt files
- An extension for Nautilus to compress and optimize LibreOffice odt files
+	python-nautilus
+Description: An extension to extract images from LibreOffice files
+ An extension to extract images from LibreOffice files

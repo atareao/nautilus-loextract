@@ -1,18 +1,32 @@
-nautilus-locompress
-===================
+nautilus-loextract
+==================
 
-nautilus-locompress
+nautilus-loextract
 
 Download
 --------
 
 Download the [package][dlp] *or* checkout the source:
 
-    $ git clone https://github.com/atareao/nautilus-locompress.git
+    $ git clone https://github.com/atareao/nautilus-loextract.git
 
 Installation
 ------------
 
+NAUTILUS:
+
     $ sudo add-apt-repositoy ppa:atareao/nautilus-extensions
     $ sudo apt-get update
-    $ sudo apt-get install nautilus-locompress
+    $ sudo apt-get install nautilus-loextract
+
+NEMO:
+
+    $ sudo add-apt-repositoy ppa:atareao/nemo-extensions
+    $ sudo apt-get update
+    $ sudo apt-get install nemo-loextract
+
+CAJA:
+
+    $ sudo add-apt-repositoy ppa:atareao/caja-extensions
+    $ sudo apt-get update
+    $ sudo apt-get install caja-loextract

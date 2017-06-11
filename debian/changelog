@@ -1,4 +1,10 @@
-nautilus-locompress (0.1.0-0extras16.04.2) zesty; urgency=medium
+nautilus-loextract (0.2.0-0extras16.04.0) zesty; urgency=medium
+
+  * Added options for sheets and presentations
+
+ -- Lorenzo Carbonell <lorenzo.carbonell.cerezo@gmail.com>  Sat, 10 Jun 2017 07:55:07 +0200
+
+nautilus-loextract (0.1.0-0extras16.04.2) zesty; urgency=medium
 
   * First release
 
